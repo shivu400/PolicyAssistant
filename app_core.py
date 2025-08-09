@@ -87,36 +87,53 @@ def extract_json_from_llm_output(text: str) -> str:
 
     return text
 
-# --- NEW: Document Processing Function for Streamlit ---
+# --- FIX: Document Processing Function for Streamlit and Webhook ---
 def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]:
     """
-    Loads and splits a list of uploaded files from Streamlit.
-    This function replaces the old directory-based loading.
+    Loads and splits a list of uploaded files from Streamlit or a webhook.
     """
     all_documents = []
-    supported_extensions = {
-        "pdf": PyPDFLoader,
-        "docx": UnstructuredWordDocumentLoader,
-        "eml": UnstructuredEmailLoader
-    }
+    
+    # NOTE: PyPDFLoader, UnstructuredWordDocumentLoader, UnstructuredEmailLoader and other loaders from
+    # langchain-community expect a file path, not an in-memory object. So, we'll write the
+    # uploaded content to a temporary file, process it, and then delete the temporary file.
 
     for uploaded_file in uploaded_files:
-        file_extension = os.path.splitext(uploaded_file.name)[1].lower().lstrip('.')
-        if file_extension in supported_extensions:
-            temp_file_path = f"./temp_file_{uploaded_file.name}"
+        try:
+            # Create a unique temporary file path
+            file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+            temp_file_path = f"./temp_{uuid.uuid4()}{file_extension}"
+            
             with open(temp_file_path, "wb") as f:
+                # Write the content from the in-memory object to the temporary file
                 f.write(uploaded_file.getbuffer())
 
-            try:
-                loader_class = supported_extensions[file_extension]
-                loader = loader_class(temp_file_path)
-                docs = loader.load()
-                all_documents.extend(docs)
-                print(f"Loaded {len(docs)} pages/documents from {uploaded_file.name}")
-            except Exception as e:
-                print(f"Error loading {uploaded_file.name}: {e}")
-            finally:
+            print(f"Loading document from temporary file: {uploaded_file.name}")
+
+            if file_extension == ".pdf":
+                loader = PyPDFLoader(temp_file_path)
+            elif file_extension == ".docx":
+                loader = UnstructuredWordDocumentLoader(temp_file_path)
+            elif file_extension == ".eml":
+                loader = UnstructuredEmailLoader(temp_file_path)
+            else:
+                print(f"Skipping unsupported file type: {uploaded_file.name}")
+                continue
+            
+            docs = loader.load()
+            all_documents.extend(docs)
+            print(f"Loaded {len(docs)} pages/documents from {uploaded_file.name}")
+
+        except Exception as e:
+            print(f"Error loading {uploaded_file.name}: {e}")
+        finally:
+            # Clean up the temporary file
+            if os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
+                
+    if not all_documents:
+        print("No supported documents were loaded.")
+        return []
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=700,
@@ -150,7 +167,7 @@ def load_chroma_db(db_path: str, embeddings):
 
 def initialize_openrouter_llm(model_name: str, temperature: float = 0.1):
     """Initializes and returns a ChatOpenAI instance configured for OpenRouter with a specific model."""
-    openrouter_api_key = "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"
+    openrouter_api_key = "OPENROUTER_API_KEY"
     if not openrouter_api_key:
         raise ValueError("OPENROUTER_API_KEY environment variable not set.")
 
