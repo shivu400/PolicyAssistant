@@ -20,6 +20,9 @@ from app_core import (
     GraphState
 )
 
+# Import Chroma for vector store
+from langchain_chroma import Chroma
+
 # A temporary, in-memory representation of a file object for our loader
 class TemporaryFile:
     def __init__(self, filename, content):

@@ -169,7 +169,7 @@ def load_chroma_db(db_path: str, embeddings):
 
 def initialize_openrouter_llm(model_name: str, temperature: float = 0.1):
     """Initializes and returns a ChatOpenAI instance configured for OpenRouter with a specific model."""
-    openrouter_api_key = "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"
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
     if not openrouter_api_key:
         raise ValueError("OPENROUTER_API_KEY environment variable not set.")
 
