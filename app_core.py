@@ -87,21 +87,22 @@ def extract_json_from_llm_output(text: str) -> str:
 
     return text
 
-# --- FIX: Document Processing Function for Streamlit and Webhook ---
+# FIX: Document Processing Function for Streamlit and Webhook
 def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]:
     """
     Loads and splits a list of uploaded files from Streamlit or a webhook.
     """
     all_documents = []
     
-    # NOTE: PyPDFLoader, UnstructuredWordDocumentLoader, UnstructuredEmailLoader and other loaders from
-    # langchain-community expect a file path, not an in-memory object. So, we'll write the
-    # uploaded content to a temporary file, process it, and then delete the temporary file.
-
+    # Initialize temp_file_path to None so it's always defined
+    temp_file_path = None
+    
     for uploaded_file in uploaded_files:
         try:
             # Create a unique temporary file path
             file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+            # NOTE: You need to import the `uuid` module for this to work
+            import uuid
             temp_file_path = f"./temp_{uuid.uuid4()}{file_extension}"
             
             with open(temp_file_path, "wb") as f:
@@ -126,11 +127,13 @@ def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]
 
         except Exception as e:
             print(f"Error loading {uploaded_file.name}: {e}")
+            # The exception is handled here, but the `finally` block will still run
         finally:
-            # Clean up the temporary file
-            if os.path.exists(temp_file_path):
+            # Clean up the temporary file, but only if it was successfully created
+            if temp_file_path and os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
-                
+                print(f"Cleaned up temporary file: {temp_file_path}")
+            
     if not all_documents:
         print("No supported documents were loaded.")
         return []
@@ -143,7 +146,6 @@ def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]
     chunks = text_splitter.split_documents(all_documents)
     print(f"Processed into {len(chunks)} chunks.")
     return chunks
-
 # --- Utility Functions (Reordered for correct execution) ---
 
 def get_huggingface_embeddings(model_name: str):
