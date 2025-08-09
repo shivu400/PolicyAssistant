@@ -6,16 +6,19 @@ from typing import List, Any
 from contextlib import contextmanager
 import requests
 
-# Import functions and classes from your app_core.py
+# 🚨 FIX: Put the SQLite version patch at the very top of the script
+# before any libraries that depend on chromadb are imported.
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
+# Now, import the other libraries
 from app_core import get_rag_components, get_langgraph_app, PolicyResponse
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain.retrievers import MultiQueryRetriever
 from langchain_core.documents import Document
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 # --- Utility for capturing CLI output ---
 @contextmanager
 def st_stdout_redirect(placeholder):
