@@ -157,3 +157,8 @@ langchain_openai
 # pysqlite3-binary   # removed: not available on Windows, sqlite3 is built-in
 gunicorn==23.0.0
 psycopg2-binary==2.9.9
+streamlit
+langchain
+langchain-huggingface
+gunicorn
+sentence-transformers
