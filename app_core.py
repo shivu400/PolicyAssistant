@@ -2,6 +2,8 @@ import os
 import json
 import requests
 import re
+import io
+import uuid
 from typing import List, Literal, TypedDict, Union, BinaryIO
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatOpenAI as DeprecatedChatOpenAI

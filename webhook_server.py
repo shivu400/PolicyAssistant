@@ -1,5 +1,3 @@
-# File: webhook_server.py
-
 import os
 import json
 import requests
@@ -48,7 +46,6 @@ except Exception as e:
     langgraph_app = None
 
 # --- Configuration for Webhook ---
-# FIX: Read the bearer token from an environment variable
 BEARER_TOKEN = os.environ.get("HACKRX_API_KEY")
 
 def authenticate_token(token):
