@@ -30,7 +30,6 @@ load_dotenv()
 CHROMA_DB_PATH = "./chroma_db"
 HF_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
-# FIX: Using a known lightweight text generation model
 PRIMARY_LLM_MODEL_NAME = "pankajmathur/orca_mini_v3_7b"
 
 # --- Pydantic Models for Structured Output ---
@@ -138,7 +137,6 @@ def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]
     print(f"Processed into {len(chunks)} chunks.")
     return chunks
 
-
 def get_huggingface_embeddings(model_name: str):
     """Initializes and returns a HuggingFaceEmbeddings object."""
     embeddings = HuggingFaceEmbeddings(
@@ -158,7 +156,6 @@ def load_chroma_db(db_path: str, embeddings):
     )
     return vector_store
 
-# FIX: Changed to a lightweight text generation model
 def initialize_openrouter_llm(model_name: str, temperature: float = 0.1):
     """Initializes and returns a ChatOpenAI instance configured for OpenRouter with a specific model."""
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")

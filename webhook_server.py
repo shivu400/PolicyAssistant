@@ -3,7 +3,6 @@
 import os
 import json
 import requests
-import re
 from flask import Flask, request, jsonify
 from typing import List
 from werkzeug.datastructures import FileStorage
@@ -16,12 +15,8 @@ from app_core import (
     get_langgraph_app,
     PolicyResponse,
     get_huggingface_embeddings,
-    process_uploaded_documents,
-    GraphState
+    process_uploaded_documents
 )
-
-# Import Chroma for vector store
-from langchain_chroma import Chroma
 
 # A temporary, in-memory representation of a file object for our loader
 class TemporaryFile:
@@ -53,21 +48,18 @@ except Exception as e:
     langgraph_app = None
 
 # --- Configuration for Webhook ---
-# Your team's token for authentication
-BEARER_TOKEN = "c96a70a0e0ca2611043c5b543b5b6f5940d3bf5c480c5ac1236690b2f148783c"
+# FIX: Read the bearer token from an environment variable
+BEARER_TOKEN = os.environ.get("HACKRX_API_KEY")
 
 def authenticate_token(token):
     return token == f"Bearer {BEARER_TOKEN}"
 
-# --- Webhook Endpoint for HackRx Submissions ---
 @app.route('/hackrx/run', methods=['POST'])
 def run_submissions():
-    # --- 1. Authentication Check ---
     auth_header = request.headers.get('Authorization')
     if not auth_header or not authenticate_token(auth_header):
         return jsonify({"error": "Unauthorized"}), 401
         
-    # --- 2. Input Validation ---
     if not request.is_json:
         return jsonify({"error": "Invalid request. Expected JSON payload."}), 400
 
@@ -78,7 +70,6 @@ def run_submissions():
     if not document_url or not questions or not isinstance(questions, list):
         return jsonify({"error": "Invalid payload format. 'documents' URL and 'questions' list are required."}), 400
 
-    # --- 3. Document Download and Processing ---
     print(f"Downloading document from URL: {document_url}")
     try:
         response = requests.get(document_url)
@@ -89,12 +80,13 @@ def run_submissions():
         
         chunks = process_uploaded_documents([temp_file])
 
-        # Use in-memory Chroma DB instead of persisting to disk to avoid storage issues
+        temp_db_path = f"./temp_db_{uuid.uuid4()}"
         temp_vector_store = Chroma.from_documents(
             documents=chunks,
-            embedding=get_huggingface_embeddings("sentence-transformers/all-MiniLM-L6-v2")
-            # No persist_directory parameter = in-memory database
+            embedding=get_huggingface_embeddings("sentence-transformers/all-MiniLM-L6-v2"),
+            persist_directory=temp_db_path
         )
+        temp_vector_store.persist()
         
         temp_retriever = temp_vector_store.as_retriever(search_kwargs={"k": 3})
         temp_app = get_langgraph_app(llm_model, temp_retriever)
@@ -104,8 +96,7 @@ def run_submissions():
     except Exception as e:
         return jsonify({"error": "Failed to process document.", "message": str(e)}), 500
     
-    # --- 4. Run RAG for each question ---
-    answers = [] # FIX: Changed from 'results' to 'answers'
+    answers = []
     for question in questions:
         print(f"Processing question: {question}")
         try:
@@ -117,21 +108,20 @@ def run_submissions():
             response_answer_obj = final_state.get('answer', None)
             
             if isinstance(response_answer_obj, PolicyResponse):
-                # FIX: Extract only the 'justification' from the structured response
-                answers.append(response_answer_obj.justification) 
+                answers.append(response_answer_obj.justification)
             else:
-                answers.append("The system could not find a relevant answer for this question.") # FIX: Changed error message
+                answers.append("The system could not find a relevant answer for this question.")
         
         except Exception as e:
             print(f"Error processing question '{question}': {e}")
             answers.append(f"An unexpected error occurred while processing this question: {str(e)}")
 
-    # --- 5. Return Results (no disk cleanup needed with in-memory DB) ---
-    print("Processing complete, returning answers")
-    
-    # FIX: Changed the final response format to match the required structure
+    if os.path.exists(temp_db_path):
+        import shutil
+        shutil.rmtree(temp_db_path)
+        print(f"Cleaned up temporary database at {temp_db_path}")
+
     return jsonify({"answers": answers}), 200
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(port=os.environ.get("PORT", 5000), debug=False)
