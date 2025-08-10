@@ -149,13 +149,38 @@ def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]
 # --- Utility Functions (Reordered for correct execution) ---
 
 def get_huggingface_embeddings(model_name: str):
-    """Initializes and returns lightweight OpenAIEmbeddings object (remote).
-    Although the function name is preserved for backward compatibility,
-    it now uses OpenAIEmbeddings to avoid loading large local ML models
-    that exceed Render's free-tier memory limits."""
-    from langchain_openai import OpenAIEmbeddings  # local import to avoid global import cost
-    embeddings = OpenAIEmbeddings()
-    return embeddings
+    """Returns a lightweight remote embedding model.
+
+    Priority of provider keys:
+    1. OPENAI_API_KEY  – OpenAI embeddings
+    2. OPENROUTER_API_KEY – OpenRouter-compatible endpoint (free credits)
+    3. HF_API_TOKEN – HuggingFace Inference API
+
+    The function name is kept for backward compatibility, but it no longer
+    downloads heavy local models, keeping the container memory-friendly."""
+    from langchain_openai import OpenAIEmbeddings  # delayed import
+    api_key = os.getenv("OPENAI_API_KEY")
+    base_url = None
+
+    if not api_key:
+        # Try OpenRouter (same OpenAI-compatible API)
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if api_key:
+            base_url = "https://openrouter.ai/api/v1"
+
+    if api_key:
+        return OpenAIEmbeddings(api_key=api_key, base_url=base_url)
+
+    # Fallback to HuggingFace Inference API (small free tier)
+    hf_token = os.getenv("HF_API_TOKEN")
+    if hf_token:
+        from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+        return HuggingFaceInferenceAPIEmbeddings(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            api_key=hf_token,
+        )
+
+    raise RuntimeError("Set OPENAI_API_KEY, OPENROUTER_API_KEY, or HF_API_TOKEN for embeddings.")
 
 def load_chroma_db(db_path: str, embeddings):
     """Loads an existing Chroma vector store from disk or creates an in-memory one."""
