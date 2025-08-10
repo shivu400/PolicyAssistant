@@ -29,7 +29,7 @@ load_dotenv()
 CHROMA_DB_PATH = "./chroma_db"
 HF_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
-PRIMARY_LLM_MODEL_NAME = "google/gemma-3-12b-it:free"
+PRIMARY_LLM_MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
 
 # --- Pydantic Models for Structured Output ---
 class PolicyResponse(BaseModel):
