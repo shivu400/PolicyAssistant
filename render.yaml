@@ -5,10 +5,12 @@ services:
     env: python
     runtime: python3.11
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn webhook_server:app
+    startCommand: gunicorn webhook_server:app --bind 0.0.0.0:$PORT
     envVars:
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: RENDER
+        value: true
     plan: free
     routes:
       - path: /hackrx/run

@@ -6,7 +6,7 @@ from typing import List, Literal, TypedDict, Union, BinaryIO
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatOpenAI as DeprecatedChatOpenAI
 
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 
 from langchain_core.documents import Document
@@ -149,18 +149,26 @@ def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]
 # --- Utility Functions (Reordered for correct execution) ---
 
 def get_huggingface_embeddings(model_name: str):
-    """Initializes and returns a HuggingFaceEmbeddings object."""
-    embeddings = HuggingFaceEmbeddings(
-        model_name=model_name,
-        model_kwargs={'device': 'cpu'},
-        encode_kwargs={'normalize_embeddings': True}
-    )
+    """Initializes and returns lightweight OpenAIEmbeddings object (remote).
+    Although the function name is preserved for backward compatibility,
+    it now uses OpenAIEmbeddings to avoid loading large local ML models
+    that exceed Render's free-tier memory limits."""
+    from langchain_openai import OpenAIEmbeddings  # local import to avoid global import cost
+    embeddings = OpenAIEmbeddings()
     return embeddings
 
 def load_chroma_db(db_path: str, embeddings):
-    """Loads an existing Chroma vector store from disk."""
-    if not os.path.exists(db_path):
-        return None
+    """Loads an existing Chroma vector store from disk or creates an in-memory one."""
+    # For Render deployment, use in-memory DB to avoid storage issues
+    if os.environ.get('RENDER') == 'true' or not os.path.exists(db_path):
+        print("Using in-memory Chroma DB for Render deployment")
+        # Create an empty in-memory Chroma DB
+        vector_store = Chroma(
+            embedding_function=embeddings
+        )
+        return vector_store
+    
+    # For local development, use persistent DB
     vector_store = Chroma(
         persist_directory=db_path,
         embedding_function=embeddings

@@ -89,13 +89,12 @@ def run_submissions():
         
         chunks = process_uploaded_documents([temp_file])
 
-        temp_db_path = f"./temp_db_{uuid.uuid4()}"
+        # Use in-memory Chroma DB instead of persisting to disk to avoid storage issues
         temp_vector_store = Chroma.from_documents(
             documents=chunks,
-            embedding=get_huggingface_embeddings("sentence-transformers/all-MiniLM-L6-v2"),
-            persist_directory=temp_db_path
+            embedding=get_huggingface_embeddings("sentence-transformers/all-MiniLM-L6-v2")
+            # No persist_directory parameter = in-memory database
         )
-        temp_vector_store.persist()
         
         temp_retriever = temp_vector_store.as_retriever(search_kwargs={"k": 3})
         temp_app = get_langgraph_app(llm_model, temp_retriever)
@@ -127,14 +126,12 @@ def run_submissions():
             print(f"Error processing question '{question}': {e}")
             answers.append(f"An unexpected error occurred while processing this question: {str(e)}")
 
-    # --- 5. Cleanup and Return Results ---
-    if os.path.exists(temp_db_path):
-        import shutil
-        shutil.rmtree(temp_db_path)
-        print(f"Cleaned up temporary database at {temp_db_path}")
-
+    # --- 5. Return Results (no disk cleanup needed with in-memory DB) ---
+    print("Processing complete, returning answers")
+    
     # FIX: Changed the final response format to match the required structure
     return jsonify({"answers": answers}), 200
 
 if __name__ == '__main__':
-    app.run(port=5000, debug=False)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)

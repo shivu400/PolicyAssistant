@@ -131,9 +131,11 @@ with st.sidebar:
                 hf_embeddings = default_system["embeddings"]
                 
                 # Create a new, temporary vector store for the uploaded documents
+                # Use in-memory Chroma DB to avoid storage issues on Render
                 uploaded_vector_store = Chroma.from_documents(
                     documents=chunks,
                     embedding=hf_embeddings
+                    # No persist_directory parameter = in-memory database
                 )
                 
                 # Create a new retriever and app for this temporary vector store
