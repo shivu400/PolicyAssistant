@@ -6,7 +6,7 @@ from typing import List, Literal, TypedDict, Union, BinaryIO
 from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatOpenAI as DeprecatedChatOpenAI
 
-from langchain_openai import OpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 
 from langchain_core.documents import Document
@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, PydanticDeprecatedSince20
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser, PydanticOutputParser
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader, UnstructuredEmailLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.retrievers import MultiQueryRetriever
 
 from dotenv import load_dotenv
 
@@ -29,7 +30,8 @@ load_dotenv()
 CHROMA_DB_PATH = "./chroma_db"
 HF_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
-PRIMARY_LLM_MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.2"
+# FIX: Using a known lightweight text generation model
+PRIMARY_LLM_MODEL_NAME = "pankajmathur/orca_mini_v3_7b"
 
 # --- Pydantic Models for Structured Output ---
 class PolicyResponse(BaseModel):
@@ -67,9 +69,8 @@ def extract_json_from_llm_output(text: str) -> str:
     match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
     if match:
         json_str = match.group(1).strip()
-        # Basic check to see if it looks like JSON before returning
         if (json_str.startswith('{') and json_str.endswith('}')) or \
-           (json_str.startswith('[') and json_str.endswith(']')): # Handles JSON arrays
+           (json_str.startswith('[') and json_str.endswith(']')):
             return json_str
 
     # Strategy 2: Find the first '{' and the last '}' that form a valid JSON object
@@ -87,53 +88,43 @@ def extract_json_from_llm_output(text: str) -> str:
 
     return text
 
-# FIX: Document Processing Function for Streamlit and Webhook
+# --- Document Processing Function for Streamlit and Webhook ---
 def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]:
     """
     Loads and splits a list of uploaded files from Streamlit or a webhook.
     """
     all_documents = []
-    
-    # Initialize temp_file_path to None so it's always defined
-    temp_file_path = None
-    
+    supported_extensions = {
+        "pdf": PyPDFLoader,
+        "docx": UnstructuredWordDocumentLoader,
+        "eml": UnstructuredEmailLoader
+    }
+
     for uploaded_file in uploaded_files:
         try:
-            # Create a unique temporary file path
             file_extension = os.path.splitext(uploaded_file.name)[1].lower()
-            # NOTE: You need to import the `uuid` module for this to work
-            import uuid
             temp_file_path = f"./temp_{uuid.uuid4()}{file_extension}"
             
             with open(temp_file_path, "wb") as f:
-                # Write the content from the in-memory object to the temporary file
                 f.write(uploaded_file.getbuffer())
 
             print(f"Loading document from temporary file: {uploaded_file.name}")
 
-            if file_extension == ".pdf":
-                loader = PyPDFLoader(temp_file_path)
-            elif file_extension == ".docx":
-                loader = UnstructuredWordDocumentLoader(temp_file_path)
-            elif file_extension == ".eml":
-                loader = UnstructuredEmailLoader(temp_file_path)
+            if file_extension in supported_extensions:
+                loader_class = supported_extensions[file_extension]
+                loader = loader_class(temp_file_path)
+                docs = loader.load()
+                all_documents.extend(docs)
+                print(f"Loaded {len(docs)} pages/documents from {uploaded_file.name}")
             else:
                 print(f"Skipping unsupported file type: {uploaded_file.name}")
-                continue
-            
-            docs = loader.load()
-            all_documents.extend(docs)
-            print(f"Loaded {len(docs)} pages/documents from {uploaded_file.name}")
 
         except Exception as e:
             print(f"Error loading {uploaded_file.name}: {e}")
-            # The exception is handled here, but the `finally` block will still run
         finally:
-            # Clean up the temporary file, but only if it was successfully created
-            if temp_file_path and os.path.exists(temp_file_path):
+            if os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
-                print(f"Cleaned up temporary file: {temp_file_path}")
-            
+                
     if not all_documents:
         print("No supported documents were loaded.")
         return []
@@ -146,60 +137,28 @@ def process_uploaded_documents(uploaded_files: List[BinaryIO]) -> List[Document]
     chunks = text_splitter.split_documents(all_documents)
     print(f"Processed into {len(chunks)} chunks.")
     return chunks
-# --- Utility Functions (Reordered for correct execution) ---
+
 
 def get_huggingface_embeddings(model_name: str):
-    """Returns a lightweight remote embedding model.
-
-    Priority of provider keys:
-    1. OPENAI_API_KEY  – OpenAI embeddings
-    2. OPENROUTER_API_KEY – OpenRouter-compatible endpoint (free credits)
-    3. HF_API_TOKEN – HuggingFace Inference API
-
-    The function name is kept for backward compatibility, but it no longer
-    downloads heavy local models, keeping the container memory-friendly."""
-    from langchain_openai import OpenAIEmbeddings  # delayed import
-    api_key = os.getenv("OPENAI_API_KEY")
-    base_url = None
-
-    if not api_key:
-        # Try OpenRouter (same OpenAI-compatible API)
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if api_key:
-            base_url = "https://openrouter.ai/api/v1"
-
-    if api_key:
-        return OpenAIEmbeddings(api_key=api_key, base_url=base_url)
-
-    # Fallback to HuggingFace Inference API (small free tier)
-    hf_token = os.getenv("HF_API_TOKEN")
-    if hf_token:
-        from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
-        return HuggingFaceInferenceAPIEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
-            api_key=hf_token,
-        )
-
-    raise RuntimeError("Set OPENAI_API_KEY, OPENROUTER_API_KEY, or HF_API_TOKEN for embeddings.")
+    """Initializes and returns a HuggingFaceEmbeddings object."""
+    embeddings = HuggingFaceEmbeddings(
+        model_name=model_name,
+        model_kwargs={'device': 'cpu'},
+        encode_kwargs={'normalize_embeddings': True}
+    )
+    return embeddings
 
 def load_chroma_db(db_path: str, embeddings):
-    """Loads an existing Chroma vector store from disk or creates an in-memory one."""
-    # For Render deployment, use in-memory DB to avoid storage issues
-    if os.environ.get('RENDER') == 'true' or not os.path.exists(db_path):
-        print("Using in-memory Chroma DB for Render deployment")
-        # Create an empty in-memory Chroma DB
-        vector_store = Chroma(
-            embedding_function=embeddings
-        )
-        return vector_store
-    
-    # For local development, use persistent DB
+    """Loads an existing Chroma vector store from disk."""
+    if not os.path.exists(db_path):
+        return None
     vector_store = Chroma(
         persist_directory=db_path,
         embedding_function=embeddings
     )
     return vector_store
 
+# FIX: Changed to a lightweight text generation model
 def initialize_openrouter_llm(model_name: str, temperature: float = 0.1):
     """Initializes and returns a ChatOpenAI instance configured for OpenRouter with a specific model."""
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
@@ -245,8 +204,6 @@ def get_rag_components(vector_store_path: str = CHROMA_DB_PATH):
 
     document_retriever = create_retriever(llm_model, chroma_vector_store, k_docs=3)
     return hf_embeddings, chroma_vector_store, llm_model, document_retriever
-
-# --- Langgraph: Define Nodes ---
 
 def retrieve_node(state: GraphState, retriever) -> GraphState:
     """Retrieves documents based on the user's question."""
