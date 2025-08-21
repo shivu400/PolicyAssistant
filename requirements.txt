@@ -10,7 +10,13 @@ langchain-core
 langchain-openai
 pydantic
 python-dotenv
-sentence-transformers
+huggingface-hub
 unstructured
 pypdf
 python-docx
+streamlit
+langchain
+langchain-huggingface
+gunicorn
+sentence-transformers
+pysqlite3-binary
